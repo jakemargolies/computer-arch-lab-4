@@ -64,30 +64,31 @@ Cache *cache_new(uint64_t size, uint64_t associativity, uint64_t line_size,
 {
     // TODO: Allocate memory to the data structures and initialize the required
     //       fields. (You might want to use calloc() for this.)
-    
+    /////////////
+    // Useful identities:
+    //// nof_lines = size/CACHE_LINESIZE;
+    //// nof_sets = nof_lines/associativity
 
-    Cache newCache;
-    // nof_lines = size/CACHE_LINESIZE;
-    // nof_sets = nof_lines/associativity
+    Cache *newCache = (Cache *)malloc(sizeof(Cache));
 
-    newCache.nof_ways = associativity;
-    newCache.rpl_pol = replacement_policy;
-    newCache.nof_sets = (size / CACHE_LINESIZE) / associativity;
-    newCache.stat_read_access = 0;
-    newCache.stat_read_miss = 0;
-    newCache.stat_write_access = 0;
-    newCache.stat_write_miss = 0;
-    newCache.stat_dirty_evicts = 0;
+    newCache->nof_ways = associativity;
+    newCache->rpl_pol = replacement_policy;
+    newCache->nof_sets = (size / CACHE_LINESIZE) / associativity;
+    newCache->stat_read_access = 0;
+    newCache->stat_read_miss = 0;
+    newCache->stat_write_access = 0;
+    newCache->stat_write_miss = 0;
+    newCache->stat_dirty_evicts = 0;
     #ifdef DEBUG
-        printf("Creating cache (# sets: %d, # ways: %d)\n", newCache.nof_sets, newCache.nof_ways);
+        printf("Creating cache (# sets: %d, # ways: %d)\n", newCache->nof_sets, newCache->nof_ways);
     #endif
-    newCache.sets = (CacheSet *)calloc(newCache.nof_sets, sizeof(CacheSet));
+    newCache->sets = (CacheSet *)calloc(newCache->nof_sets, sizeof(CacheSet));
 
-    for (int16_t i = 0; i <= newCache.nof_sets - 1; i++) {
-        newCache.sets[i].lines = (CacheLine *)calloc(newCache.nof_ways, sizeof(CacheLine));
+    for (int16_t i = 0; i <= newCache->nof_sets - 1; i++) {
+        newCache->sets[i].lines = (CacheLine *)calloc(newCache->nof_ways, sizeof(CacheLine));
     }
 
-    return (&newCache);
+    return (newCache);
 }
 
 /**
@@ -175,8 +176,8 @@ void cache_install(Cache *c, uint64_t line_addr, bool is_write,
     CacheLocStats lineStats = findTagAngIndex(c, line_addr);
 
     uint64_t coreReplacements[NUM_CORES];
-    for (int i = 0; i < NUM_CORES; i++) {
-        coreReplacements[i] = cache_find_victim(c, lineStats.tag, core_id);
+    for (uint64_t &rep : coreReplacements) {
+        rep = cache_find_victim(c, lineStats.tag, core_id);
     }
     #ifdef DEBUG
         printf("\t\tInstalling into a cache (index: %ld)\n", lineStats.index);
