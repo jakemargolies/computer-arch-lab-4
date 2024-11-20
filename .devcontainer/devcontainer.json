@@ -1,0 +1,7 @@
+{
+    "name": "Ubuntu Container",
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+    "remoteUser": "developer"
+}
