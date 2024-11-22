@@ -364,6 +364,9 @@ uint64_t memsys_access_modeDEF(MemorySystem *sys, uint64_t v_line_addr,
         // TODO: Simulate the data store and update delay accordingly.
     }
 
+    if (p_line_addr) {
+        return delay;
+    }
     return delay;
 }
 

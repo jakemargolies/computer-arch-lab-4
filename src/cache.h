@@ -143,14 +143,19 @@ typedef struct Cache
 typedef struct CacheLocStats {
 
     /**
-     * Tag, indicates which set the line is in
+     * Tag, the tag for the line addr
      */
     uint64_t tag;
 
     /**
-     * Index, indicates which way the line is in
+     * Index, indicates which set the line is in
      */
     uint64_t index;
+
+    /**
+     * Offset, indicated which way the line is in
+     */
+    uint64_t offset;
 } CacheLocStats;
 
 /** Whether a cache access is a hit or a miss. */

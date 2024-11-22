@@ -113,20 +113,32 @@ CacheResult cache_access(Cache *c, uint64_t line_addr, bool is_write,
     // TODO: Update the appropriate cache statistics.
 
     CacheLocStats lineStats = findTagAngIndex(c, line_addr);
-    CacheLine tempLine = c->sets[lineStats.index].lines[lineStats.tag];
+    CacheLine tempLine;
+    uint8_t offset;
+
+    for (uint8_t i = 0; i < c->nof_ways; i++) {
+        if (c->sets[lineStats.index].lines[i].tag == lineStats.tag) {
+            tempLine = c->sets[lineStats.index].lines[i];
+            offset = i;
+        } else {
+            tempLine.dirty = true;
+            tempLine.valid = false;
+            offset = 0;
+        }
+    }
 
     #ifdef DEBUG
         printf("\t\tindex: %ld, tag: %ld, is_write: %d, core_id: %d\n", lineStats.index, lineStats.tag, is_write, core_id);
     #endif
 
-    if (tempLine.valid & (core_id == tempLine.core_id)) {
+    if (tempLine.valid) {
         if (is_write) {
-            c->sets[lineStats.index].lines[lineStats.tag].dirty = true;
+            c->sets[lineStats.index].lines[offset].dirty = true;
             c->stat_write_access++;
         } else {
             c->stat_read_access++;
         }
-        c->sets[lineStats.index].lines[lineStats.tag].LAT = current_cycle;
+        c->sets[lineStats.index].lines[offset].LAT = current_cycle;
 
         #ifdef DEBUG
             printf("\t\tHit in the cache --> is_write: %d\n", is_write);
@@ -175,44 +187,42 @@ void cache_install(Cache *c, uint64_t line_addr, bool is_write,
     // TODO: Update the appropriate cache statistics.
     CacheLocStats lineStats = findTagAngIndex(c, line_addr);
 
-    uint64_t coreReplacements[NUM_CORES];
-    for (uint64_t &rep : coreReplacements) {
-        rep = cache_find_victim(c, lineStats.tag, core_id);
-    }
     #ifdef DEBUG
-        printf("\t\tInstalling into a cache (index: %ld)\n", lineStats.index);
+        printf("\t\tInstalling into a cache line addr: %ld(index: %ld)\n", line_addr, lineStats.index);
     #endif
 
-    if (coreReplacements[core_id] != 999) {
-        if (c->sets[lineStats.tag].lines[lineStats.index].dirty & c->sets[lineStats.tag].lines[lineStats.index].valid) {
-            c->LEL = c->sets[lineStats.tag].lines[lineStats.index];
+
+    uint64_t coreReplacement = cache_find_victim(c, lineStats.index, core_id);
+
+
+    if (c->sets[lineStats.index].lines[coreReplacement].valid) {
+        if (c->sets[lineStats.index].lines[coreReplacement].dirty & c->sets[lineStats.index].lines[coreReplacement].valid) {
+            c->LEL = c->sets[lineStats.index].lines[coreReplacement];
             #ifdef DEBUG
                 printf("\t\tVictim was dirty!\n");
             #endif
         }
         #ifdef DEBUG
-            printf("\t\tCore 1 LRU index: %ld, Core 2 LRU index: %ld\n", coreReplacements[0], coreReplacements[1]);
-            printf("\t\tFound a victim (policy_num: %d, idx: %ld)\n", c->rpl_pol, coreReplacements[core_id]);
-        #endif
-    } else {
-        #ifdef DEBUG
-            printf("\t\tFound a naive victim (valid bit not set, idx: %ld)\n", coreReplacements[0]);
+            if (NUM_CORES > 1) {
+                printf("\t\tCore 1 LRU index: %ld, Core 2 LRU index: %ld\n", coreReplacement, coreReplacement);
+            }
             
+            printf("\t\tFound a victim (policy_num: %d, idx: %ld)\n", c->rpl_pol, coreReplacement);
         #endif
     }
 
-    c->sets[lineStats.tag].lines[lineStats.index].valid = true;
-    c->sets[lineStats.tag].lines[lineStats.index].core_id = core_id;
-    c->sets[lineStats.tag].lines[lineStats.index].dirty = false;
-    c->sets[lineStats.tag].lines[lineStats.index].LAT = current_cycle;
-    c->sets[lineStats.tag].lines[lineStats.index].tag = lineStats.tag;
+    c->sets[lineStats.index].lines[coreReplacement].valid = true;
+    c->sets[lineStats.index].lines[coreReplacement].core_id = core_id;
+    c->sets[lineStats.index].lines[coreReplacement].dirty = false;
+    c->sets[lineStats.index].lines[coreReplacement].LAT = current_cycle;
+    c->sets[lineStats.index].lines[coreReplacement].tag = lineStats.tag;
     
     #ifdef DEBUG
         printf("\t\tNew cache line installed (dirty: %d, tag: %lld, core_id: %d, last_access_time: %ld)\n", 
-                    c->sets[lineStats.tag].lines[lineStats.index].dirty,
-                    c->sets[lineStats.tag].lines[lineStats.index].tag,
-                    c->sets[lineStats.tag].lines[lineStats.index].core_id,
-                    c->sets[lineStats.tag].lines[lineStats.index].LAT);
+                    c->sets[lineStats.index].lines[coreReplacement].dirty,
+                    c->sets[lineStats.index].lines[coreReplacement].tag,
+                    c->sets[lineStats.index].lines[coreReplacement].core_id,
+                    c->sets[lineStats.index].lines[coreReplacement].LAT);
         
     #endif
 
@@ -259,6 +269,7 @@ unsigned int cache_find_victim(Cache *c, unsigned int set_index,
                 // Return an invalid spot if possible
                 least_recent = i;
                 cycle_accessed = 0;
+                return least_recent;
             } else if (c->sets[set_index].lines[i].LAT < cycle_accessed) {
                 // Else grab the least recently used
                 least_recent = i;
@@ -319,10 +330,10 @@ void cache_print_stats(Cache *c, const char *header)
 
 CacheLocStats findTagAngIndex(Cache *c, uint64_t line_addr) {
     CacheLocStats lineStats;
-    u_int64_t way_mask = (1 << (u_int64_t)log2(c->nof_ways)) - 1;
+    uint64_t index_mask = (1 << (u_int64_t)log2(c->nof_ways)) - 1;
 
-    lineStats.index = line_addr & way_mask;
-    lineStats.tag = (line_addr & (way_mask ^ 0xFFFFFFFFFFFFFFFF)) >> (u_int64_t)log2(c->nof_ways);
+    lineStats.index = line_addr & index_mask;
+    lineStats.tag = line_addr >> (u_int64_t)log2(c->nof_sets);
 
     return lineStats;
 }
