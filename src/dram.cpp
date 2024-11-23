@@ -79,7 +79,17 @@ DRAM *dram_new()
 {
     // TODO: Allocate memory to the data structures and initialize the required
     //       fields. (You might want to use calloc() for this.)
-    return new DRAM();
+    #ifdef DEBUG
+        printf("Creating DRAM!\n");
+    #endif
+
+    DRAM *newDRAM = (DRAM *)malloc(sizeof(DRAM));
+    newDRAM->rows = (RowbufEntry *) calloc(CACHE_LINESIZE, sizeof(RowbufEntry));
+    newDRAM->stat_read_access = 0;
+    newDRAM->stat_read_delay = 0;
+    newDRAM->stat_write_access = 0;
+    newDRAM->stat_write_delay = 0;
+    return newDRAM;
 }
 
 /**
@@ -104,6 +114,42 @@ uint64_t dram_access(DRAM *dram, uint64_t line_addr, bool is_dram_write)
     // TODO: Update the appropriate DRAM statistics.
     // TODO: Call the dram_access_mode_CDEF() function as needed.
     // TODO: Return the delay in cycles incurred by this DRAM access.
+
+    #ifdef DEBUG
+        printf("\tAccessing DRAM! Calculating delay...\n");
+    #endif
+
+    uint64_t delay = 0;
+    if (is_dram_write) {
+        dram->stat_write_access++;
+    } else {
+        dram->stat_read_access++;
+    }
+
+    if (SIM_MODE == SIM_MODE_A || SIM_MODE == SIM_MODE_B) {
+        delay = DELAY_SIM_MODE_B;
+        if (is_dram_write) {
+            dram->stat_write_delay += delay;
+        } else {
+            dram->stat_read_delay += delay;
+        }
+        #ifdef DEBUG
+            printf("\t\tDRAM delay: %ld, is_dram_write: %d\n", delay, is_dram_write);
+        #endif
+        return delay;
+    } else {
+        delay = dram_access_mode_CDEF(dram, line_addr, is_dram_write);
+        if (is_dram_write) {
+            dram->stat_write_delay += delay;
+        } else {
+            dram->stat_read_delay += delay;
+        }
+        #ifdef DEBUG
+            printf("\t\tDRAM delay: %ld, is_dram_write: %d\n", delay, is_dram_write);
+        #endif
+        return delay;
+    }
+
     return 0;
 }
 

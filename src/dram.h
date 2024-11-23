@@ -20,11 +20,21 @@
 // TODO: Define any other data structures you need here.
 // Refer to Appendix B for details on data structures you will need here.
 
+typedef struct RowbufEntry {
+
+    /** Is this Row Buffer Valid? */
+    bool valid;
+
+    /** If it is valid, what row is this for? */
+    uint64_t rowID;
+} RowbufEntry;
+
 /** A DRAM module. */
 typedef struct DRAM
 {
     // TODO: Define any other fields you need here.
     // Refer to Appendix B for details on other fields you will need here.
+    RowbufEntry *rows;
 
     /**
      * The total number of times DRAM was accessed for a read.
@@ -52,6 +62,8 @@ typedef struct DRAM
      */
     uint64_t stat_write_delay;
 } DRAM;
+
+
 
 /** Possible page policies for DRAM. */
 typedef enum DRAMPolicyEnum

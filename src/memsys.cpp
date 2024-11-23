@@ -16,6 +16,7 @@
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <math.h>
 // You may add any other #include directives you need here, but make sure they
 // compile on the reference machine!
 
@@ -265,20 +266,77 @@ uint64_t memsys_access_modeBC(MemorySystem *sys, uint64_t line_addr,
                               AccessType type, unsigned int core_id)
 {
     uint64_t delay = 0;
+    bool needs_dcache_access = false;
+    bool needs_icache_access = false;
+    bool is_write = false;
+    CacheResult outcome;
+
+    #ifdef DEBUG
+        printf("\nAccessing memory in mode BC (line_addr: %ld, AccessType: %d, core_id: %d)\n", line_addr, type, core_id);
+    #endif
 
     if (type == ACCESS_TYPE_IFETCH)
     {
         // TODO: Simulate the instruction fetch and update delay accordingly.
+        needs_icache_access = true;
     }
 
     if (type == ACCESS_TYPE_LOAD)
     {
         // TODO: Simulate the data load and update delay accordingly.
+        needs_dcache_access = true;
+        is_write = false;
+
     }
 
     if (type == ACCESS_TYPE_STORE)
     {
         // TODO: Simulate the data store and update delay accordingly.
+        needs_dcache_access = true;
+        is_write = true;
+    }
+
+    #ifdef DEBUG
+        printf("\tAccessing L1 cache!\n");
+    #endif
+
+    if(needs_dcache_access) {
+        delay += DCACHE_HIT_LATENCY;
+        outcome = cache_access(sys->dcache, line_addr, is_write, core_id);
+
+        if(outcome == MISS) {
+            delay += memsys_l2_access(sys, line_addr, false, core_id);
+            
+            #ifdef DEBUG
+                printf("\tInstalling line in L1 cache!\n");
+            #endif
+            
+            // If num of dirty evicts goes up for the cache, that means the L1 entry was dirty.
+            uint64_t nof_dirty_evicts = sys->dcache->stat_dirty_evicts;
+            cache_install(sys->dcache, line_addr, is_write, core_id);
+            if (nof_dirty_evicts != sys->dcache->stat_dirty_evicts) {
+                #ifdef DEBUG
+                    printf("\tEvicted L1 entry was dirty! Performing writeback (addr: %lld)\n", (sys->dcache->LEL.tag << (u_int64_t)log2(sys->dcache->nof_sets)) | (((1 << (u_int64_t)log2(sys->dcache->nof_sets)) - 1) & line_addr) );
+                #endif
+                delay += memsys_l2_access(sys, (sys->dcache->LEL.tag << (u_int64_t)log2(sys->dcache->nof_sets)) | (((1 << (u_int64_t)log2(sys->dcache->nof_sets)) - 1) & line_addr) , true, core_id);
+            }
+        }
+
+    } else if (needs_icache_access) {
+        delay += DCACHE_HIT_LATENCY;
+        outcome = cache_access(sys->icache, line_addr, is_write, core_id);
+
+        if(outcome == MISS) {
+            delay += memsys_l2_access(sys, line_addr, false, core_id);
+            
+            #ifdef DEBUG
+                printf("\tInstalling line in L1 cache!\n");
+            #endif
+            
+            // Icache data should never be modified or dirties so no need to check here
+            cache_install(sys->icache, line_addr, is_write, core_id);
+            
+        }
     }
 
     return delay;
@@ -303,14 +361,34 @@ uint64_t memsys_access_modeBC(MemorySystem *sys, uint64_t line_addr,
 uint64_t memsys_l2_access(MemorySystem *sys, uint64_t line_addr,
                           bool is_writeback, unsigned int core_id)
 {
+    #ifdef DEBUG      
+        printf("\tAccessing L2 cache!\n");
+    #endif
     uint64_t delay = L2CACHE_HIT_LATENCY;
+    if (!is_writeback) {
+        CacheResult outcome = cache_access(sys->l2cache, line_addr, is_writeback, core_id);
 
-    // TODO: Perform the L2 cache access.
+        if (outcome == MISS) {
+            delay += dram_access(sys->dram, line_addr, is_writeback);
 
-    // TODO: Use the dram_access() function to get the delay of an L2 miss.
-    // TODO: Use the dram_access() function to perform writebacks to memory.
-    //       Note that writebacks are done off the critical path.
-    // This will help us track your memory reads and memory writes.
+            #ifdef DEBUG
+                printf("\tInstalling line in L2 cache!\n");
+            #endif
+
+            // If num of dirty evicts goes up for the cache, that means the L1 entry was dirty.
+            uint64_t nof_dirty_evicts = sys->dcache->stat_dirty_evicts;
+            cache_install(sys->l2cache, line_addr, is_writeback, core_id);
+            if (nof_dirty_evicts != sys->dcache->stat_dirty_evicts) {
+                #ifdef DEBUG
+                    printf("\tEvicted L2 entry was dirty! Performing writeback (addr: %lld)\n", (sys->l2cache->LEL.tag << (u_int64_t)log2(sys->l2cache->nof_sets)) | (((1 << (u_int64_t)log2(sys->l2cache->nof_sets)) - 1) & line_addr) );
+                #endif
+                delay += dram_access(sys->dram, line_addr, is_writeback);
+            }
+        }
+    } else {
+        delay += dram_access(sys->dram, line_addr, is_writeback);
+    }
+
 
     return delay;
 }

@@ -69,7 +69,7 @@ Cache *cache_new(uint64_t size, uint64_t associativity, uint64_t line_size,
     //// nof_lines = size/CACHE_LINESIZE;
     //// nof_sets = nof_lines/associativity
 
-    Cache *newCache = (Cache *)malloc(sizeof(Cache));
+    Cache *newCache = (Cache *)calloc(1, sizeof(Cache));
 
     newCache->nof_ways = associativity;
     newCache->rpl_pol = replacement_policy;
@@ -114,18 +114,22 @@ CacheResult cache_access(Cache *c, uint64_t line_addr, bool is_write,
 
     CacheLocStats lineStats = findTagAngIndex(c, line_addr);
     CacheLine tempLine;
-    uint8_t offset;
+    uint8_t wayOffset = 255;
 
     for (uint8_t i = 0; i < c->nof_ways; i++) {
         if (c->sets[lineStats.index].lines[i].tag == lineStats.tag) {
             tempLine = c->sets[lineStats.index].lines[i];
-            offset = i;
-        } else {
-            tempLine.dirty = true;
-            tempLine.valid = false;
-            offset = 0;
+            wayOffset = i;
+            break;
         }
     }
+    if (wayOffset == 255) {
+        tempLine.dirty = true;
+        tempLine.valid = false;
+        wayOffset = 0;
+    }
+
+
 
     #ifdef DEBUG
         printf("\t\tindex: %ld, tag: %ld, is_write: %d, core_id: %d\n", lineStats.index, lineStats.tag, is_write, core_id);
@@ -133,12 +137,12 @@ CacheResult cache_access(Cache *c, uint64_t line_addr, bool is_write,
 
     if (tempLine.valid) {
         if (is_write) {
-            c->sets[lineStats.index].lines[offset].dirty = true;
+            c->sets[lineStats.index].lines[wayOffset].dirty = true;
             c->stat_write_access++;
         } else {
             c->stat_read_access++;
         }
-        c->sets[lineStats.index].lines[offset].LAT = current_cycle;
+        c->sets[lineStats.index].lines[wayOffset].LAT = current_cycle;
 
         #ifdef DEBUG
             printf("\t\tHit in the cache --> is_write: %d\n", is_write);
@@ -188,7 +192,7 @@ void cache_install(Cache *c, uint64_t line_addr, bool is_write,
     CacheLocStats lineStats = findTagAngIndex(c, line_addr);
 
     #ifdef DEBUG
-        printf("\t\tInstalling into a cache line addr: %ld(index: %ld)\n", line_addr, lineStats.index);
+        printf("\t\tInstalling into a cache (index: %ld)\n", lineStats.index);
     #endif
 
 
@@ -330,7 +334,7 @@ void cache_print_stats(Cache *c, const char *header)
 
 CacheLocStats findTagAngIndex(Cache *c, uint64_t line_addr) {
     CacheLocStats lineStats;
-    uint64_t index_mask = (1 << (u_int64_t)log2(c->nof_ways)) - 1;
+    uint64_t index_mask = (1 << (u_int64_t)log2(c->nof_sets)) - 1;
 
     lineStats.index = line_addr & index_mask;
     lineStats.tag = line_addr >> (u_int64_t)log2(c->nof_sets);
